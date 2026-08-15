@@ -6,6 +6,16 @@ A standalone map of 20th-century visual art. **Forked from The Music Constellati
 
 It's a **single dataset** — `js/data/art.js` registers `GENRE_DATA["art"]`; `index.html` sets `MC_CONFIG.genres:["art"]` + `showTabs:false` so there's no genre switcher. The dataset carries **`noAudio:true`**, which is the flag the engine checks to skip all the music machinery: `playClip()` returns early, the breakout page omits the MusicBrainz "Discography" section, and the side-panel connection list shows each edge's **note** (the rich description) instead of the "♪ shared records" toggle. The Rooms button is removed from `index.html` (its handler is null-guarded). Everything else — the rendering, chord web, 3D, search, era colouring — is inherited as-is.
 
+## The Timeline view (art-only)
+
+The chord web reads poorly for this data, so for the art dataset the **`chordBtn` is relabelled "Timeline"** and toggles globe↔**timeline** (not globe↔chord). It's a fourth `viewMode` living entirely in `engine.js` (search "TIMELINE VIEW"):
+
+- **Layout** (`layoutTimeline`): each movement becomes a cluster at `x = tlX(mid-year)` (`TL_XSCALE` px/year from `TL_MIN`); movements that overlap in time are Gantt-packed into lanes (`TL_LANEH` apart, from `TL_TOP`); a movement's artists are phyllotaxis-scattered around its lane point (`nd._tx/_ty`). A radius cap (`TL_RCAP`) stops the big catch-all buckets ("Circle & associates" = 167 nodes, "Dealers & patrons" = 38) from ballooning a lane. Cached by `_tlKey`; `tlMaxLane` records the lane count.
+- **Pan through time, not fit-to-screen**: `frameTimeline` opens at a *fixed comfortable zoom* that fits the lanes **vertically** and parks at ~1900 on the left — the century overflows horizontally and you **drag to scrub across the decades** (~30 yrs visible on a desktop width). It does **not** scale the whole 100 years onto one screen. `clampTL(x,y,z)` bounds the pan (≈1897→2003 horizontally; vertical centred if it fits, else pannable) and is applied every frame in `loop`, on drag (mouse + touch), in `frameTimeline`, and in `centerOn`.
+- Year grid + labels are pinned in screen-y (top & bottom) so they ride along as you pan. Connections are drawn between `_tx/_ty`, so directional ties (`taught`, `championed`) flow left→right in time. Hit-testing (`nodeAt`) and `centerOn` have their own timeline branches. Hash route: `#…?view=timeline`.
+
+To retune the feel, adjust the constants near `TL_MIN` (`scripts/…` isn't involved — this is pure engine). `TL_XSCALE` mainly spreads movements horizontally (fewer lane collisions); the vertical fit picks the zoom.
+
 ## Data model
 
 - Node: `a(id,name,era,movement,medium)` → `{id,name,era,role:movement,movement,life:medium,blurb:"",bio:"",disco:[]}`. So **`role` = the movement** and **`life` = the medium** (Painter/Sculptor/…). In `loadGenre` the engine sets `nd.instr = nd.movement` — so **the "instrument" filter filters by movement** (`filterLabel:"All movements"`), and the small tag under a star is the movement.

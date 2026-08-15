@@ -240,26 +240,50 @@ function drawChordView(){
    x = the movement's mid-year; movements that overlap in time stack into lanes
    (a Gantt-style packing); each movement's artists cluster around its anchor;
    connections are drawn between them, so directional ties flow left→right in time. */
-let _tlKey="", timelineMoves=[];
-const TL_MIN=1895, TL_XSCALE=15, TL_LANEH=124, TL_TOP=104;
+let _tlKey="", timelineMoves=[], tlMaxLane=0;
+/* Wide year-scale so the century is broad enough to PAN across rather than being
+   squeezed onto one screen; a radius cap keeps big/catch-all clusters from
+   ballooning a lane. TL_TOP leaves room for the top year labels. */
+const TL_MIN=1895, TL_XSCALE=44, TL_LANEH=80, TL_TOP=90, TL_RCAP=58;
 const tlX=yr=>(yr-TL_MIN)*TL_XSCALE;
 function layoutTimeline(){
   if(_tlKey===G.key)return;
   const M=G.movements||{}, byMove={};
   NODES.forEach(nd=>{(byMove[nd.movement]=byMove[nd.movement]||{name:nd.movement,nodes:[]}).nodes.push(nd);});
-  const list=Object.values(byMove).map(mv=>{const d=M[mv.name]||{},er=ERAS[mv.nodes[0].era]||{};const s=d.s||er.s||1950,e=d.e||er.e||s;mv.s=s;mv.e=e;mv.mid=(s+e)/2;mv.rad=Math.sqrt(mv.nodes.length)*9+8;return mv;}).sort((a,b)=>a.s-b.s||a.mid-b.mid);
+  const list=Object.values(byMove).map(mv=>{const d=M[mv.name]||{},er=ERAS[mv.nodes[0].era]||{};const s=d.s||er.s||1950,e=d.e||er.e||s;mv.s=s;mv.e=e;mv.mid=(s+e)/2;mv.rad=Math.min(TL_RCAP,Math.sqrt(mv.nodes.length)*7+8);return mv;}).sort((a,b)=>a.s-b.s||a.mid-b.mid);
   const laneEnd=[];
   for(const mv of list){
-    let lane=0;for(;lane<laneEnd.length;lane++)if(tlX(mv.mid)-mv.rad>=laneEnd[lane]+14)break;
+    let lane=0;for(;lane<laneEnd.length;lane++)if(tlX(mv.mid)-mv.rad>=laneEnd[lane]+12)break;
     if(lane===laneEnd.length)laneEnd.push(-1e9);
     laneEnd[lane]=tlX(mv.mid)+mv.rad; mv.lane=lane;
     const bx=tlX(mv.mid), by=TL_TOP+lane*TL_LANEH;
     mv.lx=bx; mv.ly=by;
-    mv.nodes.forEach((nd,i)=>{const a=i*2.399963,r=Math.sqrt(i)*8.5;nd._tx=bx+Math.cos(a)*r;nd._ty=by+Math.sin(a)*r;});
+    mv.nodes.forEach((nd,i)=>{const a=i*2.399963,r=Math.min(TL_RCAP-6,Math.sqrt(i)*7);nd._tx=bx+Math.cos(a)*r;nd._ty=by+Math.sin(a)*r;});
   }
-  timelineMoves=list; _tlKey=G.key;
+  timelineMoves=list; tlMaxLane=Math.max(0,laneEnd.length-1); _tlKey=G.key;
 }
-function frameTimeline(){layoutTimeline();const maxX=tlX(2001)+60;tzoom=Math.max(0.34,Math.min(1.05,(W-30)/maxX));tviewX=16;tviewY=36;}
+/* Clamp a pan (x,y) at zoom z so you can't scroll off into empty space: the
+   x-range spans ~1897→2003; vertically the lane stack is centred if it fits,
+   otherwise it's pannable. Returns the clamped [x,y]. */
+function clampTL(x,y,z){
+  const xL=W*0.04+tlX(1897)*z, xR=W*0.04+tlX(2003)*z, loX=(W-40)-xR, hiX=40-xL;
+  x=hiX<loX?(loX+hiX)/2:Math.max(loX,Math.min(hiX,x));
+  const yT=(TL_TOP-64)*z, yB=(TL_TOP+tlMaxLane*TL_LANEH+64)*z, ch=yB-yT;
+  if(ch<=H-40)y=(H-ch)/2-yT; else{const loY=(H-30)-yB, hiY=30-yT;y=Math.max(loY,Math.min(hiY,y));}
+  return [x,y];
+}
+/* Open the timeline at a comfortable fixed zoom (fit the lanes vertically, NOT
+   the whole century horizontally) parked at the century's start — the user pans
+   right through the decades. */
+function frameTimeline(){
+  layoutTimeline();
+  const contentH=TL_TOP+(tlMaxLane+1)*TL_LANEH+64;
+  tzoom=Math.max(0.55,Math.min(1.25,(H-48)/contentH));
+  tviewX=28-W*0.04-tlX(1899)*tzoom;
+  const yT=(TL_TOP-64)*tzoom, yB=(TL_TOP+tlMaxLane*TL_LANEH+64)*tzoom, ch=yB-yT;
+  tviewY=ch<=H-40?(H-ch)/2-yT:28-yT;
+  [tviewX,tviewY]=clampTL(tviewX,tviewY,tzoom);
+}
 function drawTimelineView(){
   layoutTimeline();
   const z=zoom, ox=viewX, oy=viewY;
@@ -392,6 +416,7 @@ function loop(){
   if(viewMode==="holo"){ if(!pageOpen)step(); if(window.HOLO)window.HOLO.frame(); requestAnimationFrame(loop); return; }
   if(viewMode==="timeline"){
     zoom+=(tzoom-zoom)*0.12;viewX+=(tviewX-viewX)*0.12;viewY+=(tviewY-viewY)*0.12;
+    [viewX,viewY]=clampTL(viewX,viewY,zoom);
     draw();requestAnimationFrame(loop);return;
   }
   if(viewMode==="chord"){
@@ -438,6 +463,7 @@ canvas.addEventListener("mousemove",ev=>{
   const px=ev.clientX,py=ev.clientY;
   if(pointer.down){const dx=px-pointer.x,dy=py-pointer.y;if(Math.abs(dx)+Math.abs(dy)>1){pointer.moved=true;tyaw=null;
     if(viewMode==="chord"){tviewX=viewX+=dx;tviewY=viewY+=dy;}
+    else if(viewMode==="timeline"){[viewX,viewY]=clampTL(viewX+dx,viewY+dy,zoom);tviewX=viewX;tviewY=viewY;}
     else{yaw+=dx*0.005;pitch=Math.max(-1.3,Math.min(1.3,pitch+dy*0.005));vyaw=dx*0.005;vpitch=dy*0.005;}}
     pointer.x=px;pointer.y=py;return;}
   const nd=nodeAt(px,py);if(nd!==hoverNode){hoverNode=nd;if(!selNode)computeFocus(nd);canvas.style.cursor=nd?"pointer":"grab";}
@@ -464,6 +490,7 @@ canvas.addEventListener("touchmove",ev=>{
     if(!pointer.moved&&tapXY&&Math.abs(px-tapXY.x)+Math.abs(py-tapXY.y)>10)pointer.moved=true;
     if(pointer.moved){const dx=px-pointer.x,dy=py-pointer.y;tyaw=null;
       if(viewMode==="chord"){tviewX=viewX+=dx;tviewY=viewY+=dy;}
+      else if(viewMode==="timeline"){[viewX,viewY]=clampTL(viewX+dx,viewY+dy,zoom);tviewX=viewX;tviewY=viewY;}
       else{yaw+=dx*0.006;pitch=Math.max(-1.3,Math.min(1.3,pitch+dy*0.006));vyaw=dx*0.006;vpitch=dy*0.006;}}
     pointer.x=px;pointer.y=py;
   } else if(touchMode===2&&ev.touches.length>=2){
@@ -605,7 +632,7 @@ function renderChordCollab(a,b){
   loadCollabInto(box,a,b,(items,band)=>playCollabClip(a,b,items,band));
 }
 function centerOn(nd){
-  if(viewMode==="timeline"){layoutTimeline();tviewX=W/2-W*0.04-nd._tx*tzoom;tviewY=H/2-nd._ty*tzoom;return;}
+  if(viewMode==="timeline"){layoutTimeline();[tviewX,tviewY]=clampTL(W/2-W*0.04-nd._tx*tzoom,H/2-nd._ty*tzoom,tzoom);return;}
   if(viewMode==="chord")return; /* chord has its own framing; don't rotate the globe */
   const R=Math.hypot(nd.x,nd.z);tyaw=Math.atan2(nd.x,nd.z);tpitch=Math.max(-1.3,Math.min(1.3,Math.atan2(nd.y,R)));tzoom=Math.max(tzoom,1.2);}
 
