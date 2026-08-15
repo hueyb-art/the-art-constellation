@@ -236,8 +236,62 @@ function drawChordView(){
         chordLabelBoxes.push({id:it.nd.id,x0,y0:it.ay+lg-hh,x1,y1:it.ay+lg+hh});}});
   }
 }
+/* ========== TIMELINE VIEW — movements as dated clusters on a year axis ==========
+   x = the movement's mid-year; movements that overlap in time stack into lanes
+   (a Gantt-style packing); each movement's artists cluster around its anchor;
+   connections are drawn between them, so directional ties flow left→right in time. */
+let _tlKey="", timelineMoves=[];
+const TL_MIN=1895, TL_XSCALE=15, TL_LANEH=124, TL_TOP=104;
+const tlX=yr=>(yr-TL_MIN)*TL_XSCALE;
+function layoutTimeline(){
+  if(_tlKey===G.key)return;
+  const M=G.movements||{}, byMove={};
+  NODES.forEach(nd=>{(byMove[nd.movement]=byMove[nd.movement]||{name:nd.movement,nodes:[]}).nodes.push(nd);});
+  const list=Object.values(byMove).map(mv=>{const d=M[mv.name]||{},er=ERAS[mv.nodes[0].era]||{};const s=d.s||er.s||1950,e=d.e||er.e||s;mv.s=s;mv.e=e;mv.mid=(s+e)/2;mv.rad=Math.sqrt(mv.nodes.length)*9+8;return mv;}).sort((a,b)=>a.s-b.s||a.mid-b.mid);
+  const laneEnd=[];
+  for(const mv of list){
+    let lane=0;for(;lane<laneEnd.length;lane++)if(tlX(mv.mid)-mv.rad>=laneEnd[lane]+14)break;
+    if(lane===laneEnd.length)laneEnd.push(-1e9);
+    laneEnd[lane]=tlX(mv.mid)+mv.rad; mv.lane=lane;
+    const bx=tlX(mv.mid), by=TL_TOP+lane*TL_LANEH;
+    mv.lx=bx; mv.ly=by;
+    mv.nodes.forEach((nd,i)=>{const a=i*2.399963,r=Math.sqrt(i)*8.5;nd._tx=bx+Math.cos(a)*r;nd._ty=by+Math.sin(a)*r;});
+  }
+  timelineMoves=list; _tlKey=G.key;
+}
+function frameTimeline(){layoutTimeline();const maxX=tlX(2001)+60;tzoom=Math.max(0.34,Math.min(1.05,(W-30)/maxX));tviewX=16;tviewY=36;}
+function drawTimelineView(){
+  layoutTimeline();
+  const z=zoom, ox=viewX, oy=viewY;
+  const SX=x=>W*0.04+x*z+ox, SY=y=>y*z+oy;
+  ctx.textAlign="center";ctx.textBaseline="alphabetic";
+  for(let yr=1900;yr<=2000;yr+=10){const sx=SX(tlX(yr));
+    ctx.strokeStyle="rgba(255,255,255,0.045)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(sx,44);ctx.lineTo(sx,H-30);ctx.stroke();
+    ctx.fillStyle="rgba(243,236,224,0.32)";ctx.font="11px Helvetica Neue, Arial";ctx.fillText(yr,sx,H-12);ctx.fillText(yr,sx,34);}
+  const active=selNode||hoverNode, aid=active&&active.id, neigh=aid?adj[aid]:null;
+  EDGES.forEach(ed=>{if(!ed.s||!ed.t||!visible(ed.s)||!visible(ed.t))return;const lit=aid&&(ed.a===aid||ed.b===aid);
+    ctx.strokeStyle="rgba("+KIND_COLOR[ed.kind]+","+(lit?0.85:(active?0.02:0.05))+")";ctx.lineWidth=lit?1.5:0.55;
+    ctx.beginPath();ctx.moveTo(SX(ed.s._tx),SY(ed.s._ty));ctx.lineTo(SX(ed.t._tx),SY(ed.t._ty));ctx.stroke();});
+  for(const nd of NODES){if(!visible(nd))continue;const isF=nd===active,isN=neigh&&neigh.has(nd.id),col=ERAS[nd.era].color;
+    const sx=SX(nd._tx),sy=SY(nd._ty),r=Math.max(1.5,radius(nd)*0.62*z);
+    nd._sx=sx;nd._sy=sy;nd._r=r;nd._d=0;
+    ctx.save();ctx.globalAlpha=active?(isF||isN?1:0.16):0.88;ctx.shadowColor=col;ctx.shadowBlur=(isF||isN?8:4)*BLURK;
+    ctx.beginPath();ctx.arc(sx,sy,isF?6:isN?4.5:r,0,6.283);ctx.fillStyle=col;ctx.fill();ctx.restore();}
+  if(!active){ctx.textAlign="center";ctx.textBaseline="middle";
+    timelineMoves.forEach(mv=>{const sx=SX(mv.lx),sy=SY(mv.ly-mv.rad-8);if(sx<-140||sx>W+140)return;
+      ctx.font="10px Helvetica Neue, Arial";ctx.fillStyle="rgba(224,177,90,0.55)";
+      ctx.fillText(mv.name.length>30?mv.name.slice(0,28)+"…":mv.name,sx,sy);});}
+  if(active){ctx.textBaseline="middle";
+    const show=[active].concat(neigh?[...neigh].map(id=>byId[id]).filter(n=>n&&visible(n)):[]);
+    show.forEach(nd=>{const big=nd===active;ctx.save();ctx.shadowColor="rgba(0,0,0,0.92)";ctx.shadowBlur=3;
+      const right=nd._sx>W-160;ctx.textAlign=right?"right":"left";
+      ctx.font=(big?"600 ":"")+(big?13:11)+"px Helvetica Neue, Arial";
+      ctx.fillStyle=big?"rgba(245,222,150,.98)":"rgba(243,236,224,.95)";
+      ctx.fillText(nd.name,nd._sx+(right?-8:8),nd._sy);ctx.restore();});}
+}
 function draw(){
   ctx.clearRect(0,0,W,H);
+  if(viewMode==="timeline"){drawTimelineView();return;}
   if(viewMode==="chord"){drawChordView();return;}
   const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),spp=Math.sin(pitch);
   const Rstar=0.62*Math.max(W,H);
@@ -336,6 +390,10 @@ function loop(){
     else{fade=Math.min(1,fade+0.04);if(fade>=1)trans=null;}
   }
   if(viewMode==="holo"){ if(!pageOpen)step(); if(window.HOLO)window.HOLO.frame(); requestAnimationFrame(loop); return; }
+  if(viewMode==="timeline"){
+    zoom+=(tzoom-zoom)*0.12;viewX+=(tviewX-viewX)*0.12;viewY+=(tviewY-viewY)*0.12;
+    draw();requestAnimationFrame(loop);return;
+  }
   if(viewMode==="chord"){
     zoom+=(tzoom-zoom)*0.12;viewX+=(tviewX-viewX)*0.12;viewY+=(tviewY-viewY)*0.12;
     const lim=CHORD_R*zoom+220;
@@ -374,6 +432,7 @@ function nodeAt(px,py){
     for(const nd of NODES){if(!visible(nd)||nd._cea==null)continue;const da=Math.abs(((nd._cea-ang+Math.PI*3)%(Math.PI*2))-Math.PI);if(da<bd){bd=da;best=nd;}}
     return best;
   }
+  if(viewMode==="timeline"){let best=null,bd=1e9;for(const nd of NODES){if(!visible(nd)||nd._sx==null)continue;const d=Math.hypot(px-nd._sx,py-nd._sy);if(d<bd){bd=d;best=nd;}}return bd<18?best:null;}
   let best=null,bz=-1e9;for(const nd of NODES){if(!visible(nd)||nd._sx==null)continue;const r=(nd._r||6)+6;if(Math.hypot(px-nd._sx,py-nd._sy)<r&&nd._d>bz){bz=nd._d;best=nd;}}return best;}
 canvas.addEventListener("mousemove",ev=>{
   const px=ev.clientX,py=ev.clientY;
@@ -546,6 +605,7 @@ function renderChordCollab(a,b){
   loadCollabInto(box,a,b,(items,band)=>playCollabClip(a,b,items,band));
 }
 function centerOn(nd){
+  if(viewMode==="timeline"){layoutTimeline();tviewX=W/2-W*0.04-nd._tx*tzoom;tviewY=H/2-nd._ty*tzoom;return;}
   if(viewMode==="chord")return; /* chord has its own framing; don't rotate the globe */
   const R=Math.hypot(nd.x,nd.z);tyaw=Math.atan2(nd.x,nd.z);tpitch=Math.max(-1.3,Math.min(1.3,Math.atan2(nd.y,R)));tzoom=Math.max(tzoom,1.2);}
 
@@ -1105,9 +1165,9 @@ function setView(mode){
      globe & 3D re-open the card, chord re-anchors (its native card-less state). */
   const carry=(selNode&&byId[selNode.id])?selNode:null;
   const prev=viewMode; viewMode=mode;
-  if(chordBtn)chordBtn.classList.toggle("on",mode==="chord");
+  if(chordBtn)chordBtn.classList.toggle("on",mode==="chord"||mode==="timeline");
   if(holoBtn)holoBtn.classList.toggle("on",mode==="holo");
-  if(hintEl)hintEl.innerHTML=mode==="chord"?HINT_CHORD:mode==="holo"?HINT_HOLO:HINT_GLOBE;
+  if(hintEl)hintEl.innerHTML=mode==="timeline"?"<b>Movements</b> flow left→right by year &middot; <b>Hover/Click</b> to trace ties &middot; <b>Drag</b> to pan &middot; <b>Scroll</b> to zoom":mode==="chord"?HINT_CHORD:mode==="holo"?HINT_HOLO:HINT_GLOBE;
   alpha=1;userFramed=false;
   updateHashView();
   if(mode==="holo"){
@@ -1119,9 +1179,10 @@ function setView(mode){
   }
   if(prev==="holo"){ if(window.HOLO)window.HOLO.exit(); if(stageEl)stageEl.style.display=""; if(spreadBox)spreadBox.style.display=""; }
   if(mode==="chord"){chordSpin=0;chordIdle=0;deselect();yaw=0;pitch=0;tyaw=0;tpitch=0;vyaw=0;vpitch=0;frameChord();if(carry)chordPick(carry);}
+  else if(mode==="timeline"){deselect();frameTimeline();if(carry)select(carry,true);}
   else{NODES.forEach(nd=>{nd.vz+=(Math.random()-.5)*8;});tviewX=0;tviewY=0;setTimeout(fitView,1800);if(carry)select(carry,true);}
 }
-if(chordBtn)chordBtn.onclick=()=>setView(viewMode==="chord"?"globe":"chord");
+if(chordBtn)chordBtn.onclick=()=>setView((G&&G.noAudio)?(viewMode==="timeline"?"globe":"timeline"):(viewMode==="chord"?"globe":"chord"));
 if(holoBtn)holoBtn.onclick=()=>setView(viewMode==="holo"?"globe":"holo");
 
 /* ----------  GENRE LOADING, THEME & ROUTING  ---------- */
@@ -1210,7 +1271,7 @@ function loadGenre(key){
 }
 instrEl.onchange=()=>{instrFilter=instrEl.value||null;alpha=Math.max(alpha,0.8);userFramed=true;setTimeout(fitView,650);};
 
-function parseHash(){const m=location.hash.match(/^#\/?([a-z]+)(?:\/([a-z]+))?/);const g=m&&GENRES[m[1]]?m[1]:null,v=m&&m[2];return{genre:g,view:v==="chord"?"chord":v==="holo"?"holo":"globe"};}
+function parseHash(){const m=location.hash.match(/^#\/?([a-z]+)(?:\/([a-z]+))?/);const g=m&&GENRES[m[1]]?m[1]:null,v=m&&m[2];return{genre:g,view:v==="timeline"?"timeline":v==="chord"?"chord":v==="holo"?"holo":"globe"};}
 function updateHashView(){if(!G)return;const h="#/"+G.key+(viewMode==="globe"?"":"/"+viewMode);if(location.hash!==h)try{history.replaceState(null,"",h);}catch(e){}}
 addEventListener("hashchange",()=>{const p=parseHash();if(p.genre&&!trans&&G&&G.key!==p.genre)switchGenre(p.genre);if(p.view!==viewMode&&!trans)setView(p.view);});
 
