@@ -17,6 +17,25 @@ const cleanName = s => s
   .replace(/\s*\([^)]*\)\s*$/, "")        // drop a trailing (manifesto)/(architecture) note
   .replace(/\*\*/g, "").trim();
 
+// Split one artist line into individual people. Beyond the primary "·" separator
+// it unpacks the messy sub-forms in the source: "Group — a, b, c" (keep the
+// members, drop the collective label) and "X; also Y". Plain or parenthesised
+// entries are left whole, so commas *inside* "(...)" — e.g. "Art & Language
+// (Terry Atkinson, Michael Baldwin)" — are never mistaken for separators, and
+// "&" is never split (it joins duos: Bernd & Hilla Becher, Christo & Jeanne-Claude).
+const splitArtists = rest => {
+  const out = [];
+  for (let seg of rest.split("·")) {
+    seg = seg.trim(); if (!seg) continue;
+    if (seg.startsWith("*(") || seg.startsWith("(")) { out.push(seg); continue; }   // a parenthetical note
+    const dm = seg.match(/\s[—–]\s+(.+)$/);                                          // "Group — member, member"
+    if (dm) { for (const p of dm[1].split(",")) out.push(p); continue; }
+    if (seg.includes(";")) { for (const p of seg.split(";")) out.push(p.replace(/^\s*(also|and)\s+/i, "")); continue; }
+    out.push(seg);
+  }
+  return out;
+};
+
 const eras = {};        // key -> {label, color, s, e}
 const movements = {};   // name -> {s, e, era}  (date span for the timeline x-axis)
 const nodes = new Map();// id -> node
@@ -50,17 +69,19 @@ function ensureNode(name, { era, movement, medium } = {}) {
       const ey = years(m[2]);
       eras[era] = { label: m[2].replace(/\s*\(.*\)\s*$/, "").trim(), color: ERA_COLORS[(+m[1] - 1) % ERA_COLORS.length], s: ey[0] || null, e: ey[ey.length - 1] || null };
       movement = null;
+    } else if (line.startsWith("## ")) {
+      movement = null; era = null;                               // a non-ERA H2 (e.g. "Quick reference" table) — stop attributing lines to the last movement
     } else if ((m = line.match(/^### (.+)$/))) {
       const full = m[1];
       movement = full.replace(/\s*\([^)]*\)\s*$/, "").trim();   // "Cubism (Paris, 1907–1914)" -> "Cubism"
       const my = years(full);
       if (!movements[movement]) movements[movement] = { s: my[0] || null, e: my[my.length - 1] || my[0] || null, era };
       medium = "Painter";
-    } else if (line && movement && era && !line.startsWith("#") && !line.startsWith(">")) {
+    } else if (line && movement && era && !line.startsWith("#") && !line.startsWith(">") && !line.startsWith("|") && !line.startsWith("---")) {
       let rest = line, med = medium;
       const mm = line.match(/^\*([A-Za-z][^:*]*)\:?\*\s*(.*)$/);  // *Sculpture:* Name · Name
       if (mm) { med = mm[1].replace(/:$/, "").trim(); rest = mm[2]; }
-      for (const part of rest.split("·")) {
+      for (const part of splitArtists(rest)) {
         const nm = cleanName(part);
         if (nm && nm.length > 1) ensureNode(nm, { era, movement, medium: /sculpt/i.test(med) ? "Sculptor" : /architect/i.test(med) ? "Architect" : /photo/i.test(med) ? "Photographer" : "Painter" });
       }

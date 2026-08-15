@@ -28,7 +28,7 @@ To retune the feel, adjust the constants near `TL_MIN` (`scripts/…` isn't invo
 ## The importer
 
 `scripts/import-art.mjs` parses the two source markdown files on the Desktop (`~/Desktop/20th Century Art Movements/`) into `art.js`:
-- **Movements file** → eras (`## ERA N — …`), movements (`### Movement (place, years)`), artists (`·`-separated, with `*Sculpture:*`/`*Architecture:*` medium prefixes).
+- **Movements file** → eras (`## ERA N — …`), movements (`### Movement (place, years)`), artists (`·`-separated, with `*Sculpture:*`/`*Architecture:*` medium prefixes). A non-ERA `## ` heading (e.g. the closing "Quick reference" table) resets the current movement so trailing prose/tables aren't parsed as artists, and `|`/`---` lines are skipped. `splitArtists()` also unpacks the messy sub-forms: `Group — a, b, c` (keep the members, drop the collective) and `X; also Y`; it deliberately leaves `&` alone (it joins duos — Bernd & Hilla Becher, Christo & Jeanne-Claude) and never splits commas inside `(...)`.
 - **Connections file** → edges, grouped by era then by relationship type (`### Teacher → student` etc.). `→` between bold names = directional, `·` = symmetric; the text after `—` is the note.
 - Names → ids via a diacritic-stripped slug (so the two files' names match). Connection-only figures (dealers, writers) become nodes too (`Dealers & patrons` / `Circle & associates` movements).
 
