@@ -16,12 +16,13 @@ const lsKey=s=>"tmc_"+G.key+"_"+s;
 
 const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
 let W,H,DPR;
-function resize(){DPR=window.devicePixelRatio||1;W=innerWidth;H=innerHeight;canvas.width=W*DPR;canvas.height=H*DPR;canvas.style.width=W+"px";canvas.style.height=H+"px";ctx.setTransform(DPR,0,0,DPR,0,0);}
+function resize(){DPR=window.devicePixelRatio||1;W=innerWidth;H=innerHeight;canvas.width=W*DPR;canvas.height=H*DPR;canvas.style.width=W+"px";canvas.style.height=H+"px";ctx.setTransform(DPR,0,0,DPR,0,0);if(typeof tlMeasureChrome==="function")tlMeasureChrome();}
 addEventListener("resize",resize);resize();
 
 const radius=nd=>6+Math.sqrt(nd.deg)*3.0;
 let activeEras=new Set();
 let instrFilter=null;
+var tlAxisY=74;   /* screen-y of the timeline year axis; kept below the toolbar. var (not let) so the startup resize() can set it before this line runs */
 const visible=nd=>activeEras.has(nd.era)&&(!instrFilter||nd.instr===instrFilter);
 
 /* Directional relationship words across all genres; symmetric ones come from data (sym). */
@@ -240,8 +241,11 @@ function drawChordView(){
    x = the movement's mid-year; movements that overlap in time stack into lanes
    (a Gantt-style packing); each movement's artists cluster around its anchor;
    connections are drawn between them, so directional ties flow left→right in time. */
-let _tlKey="", timelineMoves=[], tlMaxLane=0, tlHoverMv=null;
+let _tlKey="", timelineMoves=[], tlMaxLane=0, tlHoverMv=null, tlBloomMv=null;
 const TL_BLOOM_K=1.3, TL_BLOOM_MAX=98;   /* hover fan-out: extra scale, capped radius */
+/* Keep the year axis just below the top toolbar (which wraps taller on narrow
+   screens), so the decade labels never hide behind it. */
+function tlMeasureChrome(){const b=document.querySelector(".topbar");tlAxisY=(b?Math.round(b.getBoundingClientRect().bottom):56)+18;}
 /* Wide year-scale so the century is broad enough to PAN across rather than being
    squeezed onto one screen; a radius cap keeps big/catch-all clusters from
    ballooning a lane. TL_TOP leaves room for the top year labels. */
@@ -270,8 +274,10 @@ function layoutTimeline(){
 function clampTL(x,y,z){
   const xL=W*0.04+tlX(1897)*z, xR=W*0.04+tlX(2003)*z, loX=(W-40)-xR, hiX=40-xL;
   x=hiX<loX?(loX+hiX)/2:Math.max(loX,Math.min(hiX,x));
+  /* vertical band = below the year axis, above the bottom corners */
+  const bandTop=tlAxisY+18, bandBot=H-24, band=bandBot-bandTop;
   const yT=(TL_TOP-64)*z, yB=(TL_TOP+tlMaxLane*TL_LANEH+64)*z, ch=yB-yT;
-  if(ch<=H-40)y=(H-ch)/2-yT; else{const loY=(H-30)-yB, hiY=30-yT;y=Math.max(loY,Math.min(hiY,y));}
+  if(ch<=band)y=bandTop+(band-ch)/2-yT; else{const loY=bandBot-yB, hiY=bandTop-yT;y=Math.max(loY,Math.min(hiY,y));}
   return [x,y];
 }
 /* Which movement-cluster the cursor is over — by centre + current radius, so the
@@ -292,8 +298,11 @@ function tlClusterAt(px,py){
 function stepTimeline(){
   const panning=pointer.down&&pointer.moved;
   tlHoverMv=panning?null:tlClusterAt(pointer.x,pointer.y);
+  /* a movement chosen from the filter stays bloomed open, even without a hover */
+  const forced=instrFilter?timelineMoves.find(m=>m.name===instrFilter):null;
+  tlBloomMv=tlHoverMv||forced;
   for(const mv of timelineMoves){
-    const want=mv===tlHoverMv?1:0;
+    const want=(mv===tlHoverMv||mv===forced)?1:0;
     mv.exp+=(want-mv.exp)*0.16; if(mv.exp<0.002)mv.exp=0; else if(mv.exp>0.998)mv.exp=1;
     const s=mv.exp?Math.min(1+mv.exp*TL_BLOOM_K, TL_BLOOM_MAX/Math.max(mv.rad,1)):1;
     for(const nd of mv.nodes){nd._tx=mv.lx+nd._ox*s;nd._ty=mv.ly+nd._oy*s;}
@@ -303,26 +312,39 @@ function stepTimeline(){
    the whole century horizontally) parked at the century's start — the user pans
    right through the decades. */
 function frameTimeline(){
-  layoutTimeline();
+  layoutTimeline(); tlMeasureChrome();
   tlHoverMv=null; timelineMoves.forEach(mv=>mv.exp=0);
+  const bandTop=tlAxisY+18, band=Math.max(140,(H-24)-bandTop);
   const contentH=TL_TOP+(tlMaxLane+1)*TL_LANEH+64;
-  tzoom=Math.max(0.55,Math.min(1.25,(H-48)/contentH));
+  tzoom=Math.max(0.5,Math.min(1.25,band/contentH));
   tviewX=28-W*0.04-tlX(1899)*tzoom;
   const yT=(TL_TOP-64)*tzoom, yB=(TL_TOP+tlMaxLane*TL_LANEH+64)*tzoom, ch=yB-yT;
-  tviewY=ch<=H-40?(H-ch)/2-yT:28-yT;
+  tviewY=ch<=band?bandTop+(band-ch)/2-yT:bandTop-yT;
   [tviewX,tviewY]=clampTL(tviewX,tviewY,tzoom);
+}
+/* Pan the timeline so a chosen movement's cluster sits centred in the band
+   (used when a single movement is picked from the filter). */
+function jumpToMovement(name){
+  layoutTimeline(); tlMeasureChrome();
+  const mv=timelineMoves.find(m=>m.name===name); if(!mv){frameTimeline();return;}
+  const bandMid=(tlAxisY+18 + H-24)/2;
+  [tviewX,tviewY]=clampTL(W/2-W*0.04-mv.lx*tzoom, bandMid-mv.ly*tzoom, tzoom);
 }
 function drawTimelineView(){
   layoutTimeline();
   const z=zoom, ox=viewX, oy=viewY;
   const SX=x=>W*0.04+x*z+ox, SY=y=>y*z+oy;
+  /* year axis: a single row just under the top toolbar (never behind it), with
+     the decade grid dropping down through the clusters */
+  const axisY=tlAxisY, gridTop=axisY+11, gridBot=H-20;
+  ctx.fillStyle="rgba(10,9,14,0.5)";ctx.fillRect(0,axisY-15,W,27);
   ctx.textAlign="center";ctx.textBaseline="alphabetic";
-  for(let yr=1900;yr<=2000;yr+=10){const sx=SX(tlX(yr));
-    ctx.strokeStyle="rgba(255,255,255,0.045)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(sx,44);ctx.lineTo(sx,H-30);ctx.stroke();
-    ctx.fillStyle="rgba(243,236,224,0.32)";ctx.font="11px Helvetica Neue, Arial";ctx.fillText(yr,sx,H-12);ctx.fillText(yr,sx,34);}
+  for(let yr=1900;yr<=2000;yr+=10){const sx=SX(tlX(yr));if(sx<-40||sx>W+40)continue;
+    ctx.strokeStyle="rgba(255,255,255,0.05)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(sx,gridTop);ctx.lineTo(sx,gridBot);ctx.stroke();
+    ctx.fillStyle="rgba(243,236,224,0.62)";ctx.font="600 11px Helvetica Neue, Arial";ctx.fillText(yr,sx,axisY);}
   /* Tie-tracing is a CLICK affordance (selNode); hovering a cluster blooms it. */
   const foc=selNode, aid=foc&&foc.id, neigh=aid?adj[aid]:null;
-  const bloom=tlHoverMv, bname=bloom&&bloom.name;
+  const bloom=tlBloomMv, bname=bloom&&bloom.name;
   EDGES.forEach(ed=>{if(!ed.s||!ed.t||!visible(ed.s)||!visible(ed.t))return;const lit=aid&&(ed.a===aid||ed.b===aid);
     ctx.strokeStyle="rgba("+KIND_COLOR[ed.kind]+","+(lit?0.85:(foc?0.02:(bloom?0.03:0.05)))+")";ctx.lineWidth=lit?1.5:0.55;
     ctx.beginPath();ctx.moveTo(SX(ed.s._tx),SY(ed.s._ty));ctx.lineTo(SX(ed.t._tx),SY(ed.t._ty));ctx.stroke();});
@@ -348,7 +370,7 @@ function drawTimelineView(){
     ctx.fillText(bloom.name.length>34?bloom.name.slice(0,32)+"…":bloom.name,cx,cy);ctx.restore();
     /* member names once the bloom is mostly open; a huge cluster only labels the
        star under the cursor (else it's a wall of text) */
-    const small=bloom.nodes.length<=18;
+    const small=bloom.nodes.length<=24;
     if(bloom.exp>0.5){ctx.textBaseline="middle";
       bloom.nodes.forEach(nd=>{if(!visible(nd)||nd._sx==null)return;if(!small&&nd!==hoverNode)return;
         const right=nd._sx>W-150,hot=nd===hoverNode;ctx.save();ctx.shadowColor="rgba(0,0,0,0.92)";ctx.shadowBlur=3;
@@ -1183,7 +1205,7 @@ function playClip(nd){
 }
 
 /* frame the voyage: recentre the tunnel (toStart=true snaps back to the genre's beginnings) */
-function fitView(){if(viewMode==="chord"){frameChord();return;}let R=1;for(const nd of NODES){if(!visible(nd))continue;R=Math.max(R,Math.hypot(nd.x,nd.y,nd.z));}tzoom=Math.max(0.3,Math.min(2.4,(Math.min(W,H)*0.46)/R));tyaw=null;}
+function fitView(){if(viewMode==="chord"){frameChord();return;}if(viewMode==="timeline"){frameTimeline();return;}let R=1;for(const nd of NODES){if(!visible(nd))continue;R=Math.max(R,Math.hypot(nd.x,nd.y,nd.z));}tzoom=Math.max(0.3,Math.min(2.4,(Math.min(W,H)*0.46)/R));tyaw=null;}
 const fitBtn=document.getElementById("fitBtn");if(fitBtn)fitBtn.onclick=fitView;
 /* ----------  HIGH-RES POSTER EXPORT (prints)  ----------
    Renders the current view to a large square at print resolution and downloads
@@ -1254,6 +1276,8 @@ function setView(mode){
     return;
   }
   if(prev==="holo"){ if(window.HOLO)window.HOLO.exit(); if(stageEl)stageEl.style.display=""; if(spreadBox)spreadBox.style.display=""; }
+  /* the Tight/Spread slider only drives the globe force-sim — hide it elsewhere */
+  if(spreadBox)spreadBox.style.display=mode==="globe"?"":"none";
   if(mode==="chord"){chordSpin=0;chordIdle=0;deselect();yaw=0;pitch=0;tyaw=0;tpitch=0;vyaw=0;vpitch=0;frameChord();if(carry)chordPick(carry);}
   else if(mode==="timeline"){deselect();frameTimeline();if(carry)select(carry,true);}
   else{NODES.forEach(nd=>{nd.vz+=(Math.random()-.5)*8;});tviewX=0;tviewY=0;setTimeout(fitView,1800);if(carry)select(carry,true);}
@@ -1345,7 +1369,9 @@ function loadGenre(key){
   setTimeout(()=>{if(!userFramed)fitView();},1600);
   try{localStorage.setItem("tmc_last",key);}catch(e){}
 }
-instrEl.onchange=()=>{instrFilter=instrEl.value||null;alpha=Math.max(alpha,0.8);userFramed=true;setTimeout(fitView,650);};
+instrEl.onchange=()=>{instrFilter=instrEl.value||null;alpha=Math.max(alpha,0.8);userFramed=true;
+  if(viewMode==="timeline"){deselect();if(instrFilter)jumpToMovement(instrFilter);else frameTimeline();}
+  else setTimeout(fitView,650);};
 
 function parseHash(){const m=location.hash.match(/^#\/?([a-z]+)(?:\/([a-z]+))?/);const g=m&&GENRES[m[1]]?m[1]:null,v=m&&m[2];return{genre:g,view:v==="timeline"?"timeline":v==="chord"?"chord":v==="holo"?"holo":"globe"};}
 function updateHashView(){if(!G)return;const h="#/"+G.key+(viewMode==="globe"?"":"/"+viewMode);if(location.hash!==h)try{history.replaceState(null,"",h);}catch(e){}}
