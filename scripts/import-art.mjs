@@ -129,11 +129,44 @@ for (const n of nodes.values()) if (!n.era) {
 }
 for (const n of nodes.values()) if (!n.movement) n.movement = "Circle & associates";
 
-// every movement a node uses needs a dated entry for the timeline; fill gaps from its era
+// Fold the catch-all buckets into real movements. A connection-only figure (a
+// partner, writer, dealer or associate who was never listed under a movement)
+// adopts the movement + era of the artist they're most strongly tied to — so
+// they sit with that artist in time instead of piling into one undated blob at
+// ~1907 (e.g. Jeanne Hébuterne → near Modigliani, Lee Miller → the Surrealists).
+// A few passes let associate→associate chains resolve to a real movement.
+{
+  const CATCHALL = new Set(["Circle & associates", "Dealers & patrons"]);
+  const deg = {}, nbrs = {};
+  edges.forEach(e => {
+    deg[e.a] = (deg[e.a] || 0) + 1; deg[e.b] = (deg[e.b] || 0) + 1;
+    (nbrs[e.a] = nbrs[e.a] || []).push(e.b); (nbrs[e.b] = nbrs[e.b] || []).push(e.a);
+  });
+  for (let pass = 0; pass < 4; pass++) for (const n of nodes.values()) {
+    if (!CATCHALL.has(n.movement)) continue;
+    let best = null;                                   // most-connected non-catch-all neighbour
+    for (const id of nbrs[n.id] || []) {
+      const o = nodes.get(id);
+      if (!o || !o.movement || CATCHALL.has(o.movement)) continue;
+      if (!best || (deg[id] || 0) > (deg[best.id] || 0)) best = o;
+    }
+    if (best) { n.movement = best.movement; if (best.era) n.era = best.era; }
+  }
+}
+
+// every movement a node uses needs a dated entry for the timeline; fill gaps from
+// its era. A movement with no heading date (the residual catch-all) is placed at
+// its members' *most common* era, not whichever member happened to come first.
+const eraMode = {};   // movement -> modal era of its members
+{
+  const cnt = {};
+  for (const n of nodes.values()) ((cnt[n.movement] = cnt[n.movement] || {})[n.era] = (cnt[n.movement][n.era] || 0) + 1);
+  for (const [mv, ec] of Object.entries(cnt)) eraMode[mv] = Object.keys(ec).sort((a, b) => ec[b] - ec[a])[0];
+}
 for (const n of nodes.values()) {
-  if (!movements[n.movement]) movements[n.movement] = { s: null, e: null, era: n.era };
+  if (!movements[n.movement]) movements[n.movement] = { s: null, e: null, era: eraMode[n.movement] || n.era };
   const mv = movements[n.movement];
-  if (!mv.era) mv.era = n.era;
+  if (!mv.era) mv.era = eraMode[n.movement] || n.era;
   const er = eras[mv.era] || eras[n.era];
   if (!mv.s && er) mv.s = er.s;
   if (!mv.e && er) mv.e = er.e || er.s;
