@@ -336,12 +336,12 @@ function drawTimelineView(){
   const SX=x=>W*0.04+x*z+ox, SY=y=>y*z+oy;
   /* year axis: a single row just under the top toolbar (never behind it), with
      the decade grid dropping down through the clusters */
-  const axisY=tlAxisY, gridTop=axisY+11, gridBot=H-20;
-  ctx.fillStyle="rgba(10,9,14,0.5)";ctx.fillRect(0,axisY-15,W,27);
+  const axisY=tlAxisY, gridTop=axisY+13, gridBot=H-20;
+  ctx.fillStyle="rgba(10,9,14,0.5)";ctx.fillRect(0,axisY-19,W,32);
   ctx.textAlign="center";ctx.textBaseline="alphabetic";
   for(let yr=1900;yr<=2000;yr+=10){const sx=SX(tlX(yr));if(sx<-40||sx>W+40)continue;
     ctx.strokeStyle="rgba(255,255,255,0.05)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(sx,gridTop);ctx.lineTo(sx,gridBot);ctx.stroke();
-    ctx.fillStyle="rgba(243,236,224,0.62)";ctx.font="600 11px Helvetica Neue, Arial";ctx.fillText(yr,sx,axisY);}
+    ctx.fillStyle="rgba(245,238,226,0.82)";ctx.font="700 16px Helvetica Neue, Arial";ctx.fillText(yr,sx,axisY);}
   /* Tie-tracing is a CLICK affordance (selNode); hovering a cluster blooms it. */
   const foc=selNode, aid=foc&&foc.id, neigh=aid?adj[aid]:null;
   const bloom=tlBloomMv, bname=bloom&&bloom.name;
