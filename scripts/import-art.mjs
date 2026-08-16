@@ -225,6 +225,11 @@ for (const n of nodes.values()) {
     const best = (ENR.works[e.qid] || [])[0];      // already ranked: signature work first
     if (best && best.img) f.art = { u: best.img + (best.img.includes("?") ? "&" : "?") + "width=760", t: best.title || "", y: best.year || "" };
   }
+  // fall back to a museum open-access work (public domain only) — scripts/museum-art.mjs
+  if (!f.art) {
+    const m = (ENR.museum || {})[n.id];
+    if (m && m.u) f.art = { u: m.u, t: m.t || "", y: m.y || "", src: m.src || "", page: m.page || "" };
+  }
   if (b && b.blurb) f.blurb = b.blurb;
   if (b && b.bio) f.bio = b.bio;
   if (Object.keys(f).length) factsOut[n.id] = f;

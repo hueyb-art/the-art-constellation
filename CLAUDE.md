@@ -61,3 +61,21 @@ Selecting an artist — by search or by click — **pins the globe to their star
 - centring puts a star at the near pole, where `pf=CAM/max(120,CAM-zz)` is pegged at its cap (`CAM=760`, but this graph's radii reach ~2300) — so **one pixel of world drift becomes several across the screen**. Before pinning, a searched star left the frame within seconds.
 
 The idle spin (`vyaw` easing to 0.0012) is also zeroed while something is selected. **Dragging clears the pin** (mouse + touch handlers) so a deliberate look-around isn't snapped back; `deselect()` clears it and the sky drifts again. `pinned` is declared `var` because `loop()` and the drag handlers sit above its declaration.
+
+## Artwork coverage: why it stops at ~42%
+
+`scripts/museum-art.mjs` was written to push artwork coverage past the Commons number using museum open-access APIs (Art Institute of Chicago, the Met). **It found nothing: 511 artists queried, 0 works.** That is structural — those programmes only release *public-domain* images, and the artists missing from Commons are precisely those still in copyright, so both sources share one ceiling. Don't re-litigate this; ~42% is close to the real limit for 20th-century art, and the `.seework` link-out covers the rest.
+
+Two guards in that script are worth keeping in mind if it is ever re-pointed at another source, because both caught real errors in testing: museum keyword search returns **namesakes** (an 1819 print offered for Loïs Mailou Jones, born 1905; a 1751 Encyclopédie plate for André Breton), so a hit must match the artist's surname *and* a forename as **whole words**, and the work's date must fall inside the artist's lifetime.
+
+## Recurring failure mode: name collisions
+
+The single most productive accuracy check on this dataset. An artist who shares a name with someone more famous silently acquires their dates, portrait and artworks. Found so far: **Francis Bacon** → the philosopher (1561–1626); **Corneille** → Pierre Corneille the playwright; **Rudolf von Leyden** → Paracelsus; **Gronk** → the NFL player Rob Gronkowski; **Max Weber** → the sociologist; **Abdel Hadi El-Gazzar** → a basketball player; **Atsuko Tanaka** → a voice actress; **Oscar Rabin** → a bandleader.
+
+Two cheap detectors, both worth re-running after any data change:
+1. **Implausible dates** — anyone dying before 1900 or with a lifespan under ~12 years in a 20th-century dataset is almost certainly the wrong person. (This is how Francis Bacon was caught.)
+2. **Non-art occupations** — a matched record whose Wikidata occupation and description show no art connection.
+
+Fix by adding disambiguated titles to `COLLISION` in `enrich-art.mjs`; if nothing verifies, **blank it — no facts beats wrong facts**. Note the art test accepts "writer"/"poet" (the dataset contains critics and patrons), which is exactly the hole Bacon and Corneille came through.
+
+Also guard against upstream error: Wikidata gave two living artists (Melamid, Paladino) a death date equal to their birth year, rendering "1945–1945". `enrich-art.mjs` drops any death within 12 years of birth.

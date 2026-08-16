@@ -618,11 +618,15 @@ function connsFor(nd){return EDGES.filter(ed=>ed.a===nd.id||ed.b===nd.id).map(ed
    Everyone else gets a link out to Wikipedia rather than a borrowed image. */
 function artHTML(nd,cls){
   if(nd.art&&nd.art.u){
-    const file=((nd.art.u.split("Special:FilePath/")[1]||"").split("?")[0]);
     const cap=[nd.art.t,nd.art.y].filter(Boolean).map(esc).join(", ");
+    /* credit the actual source: Wikimedia Commons, or the museum whose
+       open-access programme released the work into the public domain */
+    let href,label;
+    if(nd.art.src){href=nd.art.page||nd.art.u;label=nd.art.src;}
+    else{href="https://commons.wikimedia.org/wiki/File:"+((nd.art.u.split("Special:FilePath/")[1]||"").split("?")[0]);label="Commons";}
     return `<figure class="artfig ${cls||""}">
       <img src="${nd.art.u}" alt="${esc(nd.name)}${nd.art.t?" — "+esc(nd.art.t):""}" loading="lazy" onerror="this.closest('.artfig').style.display='none'">
-      <figcaption>${cap||"Work"} &middot; <a href="https://commons.wikimedia.org/wiki/File:${file}" target="_blank" rel="noopener">Commons</a></figcaption></figure>`;
+      <figcaption>${cap||"Work"} &middot; <a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a></figcaption></figure>`;
   }
   if(nd.wiki)return `<a class="seework" href="https://en.wikipedia.org/wiki/${encodeURIComponent(nd.wiki)}" target="_blank" rel="noopener">See their work on Wikipedia &nearr;</a>`;
   return "";

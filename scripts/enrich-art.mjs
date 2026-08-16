@@ -52,17 +52,29 @@ const str = (cl, p) => { try { return cl[p][0].mainsnak.datavalue.value; } catch
 // sociologist, "Abdel Hadi El-Gazzar" to a basketball player. Re-resolved with
 // disambiguated titles and an art-occupation requirement; if none matches we
 // record NO facts rather than somebody else's life. Run: --collisions
+// A value may be a list of candidate article titles, or {qid} for an artist who
+// has a Wikidata entry but no English article (facts only, no extract/portrait).
+// Kwon Young-Woo and Min Joung-ki are deliberately absent: both were checked
+// against Wikipedia and Wikidata, in English and in Korean, and neither is
+// covered — so they carry no facts rather than a plausible stranger's.
 const COLLISION = {
   maxweber: ["Max Weber (artist)"],
   tanakaatsuko: ["Atsuko Tanaka (artist)"],
-  abdelhadielgazzar: ["Abdel Hadi El-Gazzar (artist)", "Abdel Hadi El Gazzar"],
+  abdelhadielgazzar: ["Abdel Hadi Al Gazzar", "Abdel Hadi El-Gazzar (artist)"],
   gronk: ["Gronk (artist)"],
   oscarrabin: ["Oscar Rabine", "Oscar Rabin (artist)"],
-  kwonyoungwoo: ["Kwon Young-woo (artist)", "Kwon Young-Woo (artist)"],
-  minjoungki: ["Min Joung-ki (artist)", "Min Joung-ki"],
-  eddiechambers: ["Eddie Chambers (art historian)"],
-  tomdoyle: ["Tom Doyle (sculptor)"],
-  thebandungschool: [],          // not a person at all — a school; never enrich
+  eddiechambers: ["Eddie Chambers (artist)"],
+  tomdoyle: { qid: "Q56033705" },   // American visual artist / sculptor, 1928–2016; no enwiki article
+  // bare titles that land on a disambiguation page, a gallery, or a sweet company
+  takis: ["Takis (sculptor)"],
+  konradfischer: ["Konrad Fischer (art dealer)", "Konrad Fischer (gallerist)"],
+  wangkeping: ["Wang Keping (sculptor)", "Wang Keping (artist)"],
+  guerrillagirls: ["Guerrilla Girls"],   // a collective, so it needs the art-occupation route
+  // caught by the implausible-dates scan: the bare name is a much more famous
+  // pre-20th-century figure, and "writer"/"poet" in the art test let them pass
+  corneille: ["Corneille (artist)", "Guillaume Cornelis van Beverloo"],   // not Pierre Corneille (1606–1684)
+  francisbacon: ["Francis Bacon (artist)"],                               // not the philosopher (1561–1626)
+  rudolfvonleyden: ["Rudolf von Leyden (art critic)", "Rudolf von Leyden"], // resolved to Paracelsus (!)
 };
 
 // ---- resolve one artist -> {title, qid, extract, dates, portrait, ...} ----
@@ -115,10 +127,27 @@ cache.artists = cache.artists || {}; cache.labels = cache.labels || {}; cache.wo
 // --collisions: re-resolve only the known name-collision artists, strictly
 if (args.includes("--collisions")) {
   const ART_OCC = /(paint|sculpt|artist|photograph|architect|print|draught|ceramic|collag|installation|performance|curat|art histor|art critic|design|mural|engrav|calligraph|illustrat)/i;
-  for (const [id, titles] of Object.entries(COLLISION)) {
+  for (const [id, spec] of Object.entries(COLLISION)) {
     const nd = nodes.find(n => n.id === id); if (!nd) continue;
     let found = null;
-    for (const t of titles) {
+    if (spec && spec.qid) {                                   // Wikidata-only: facts, no article
+      const wd = await get(`https://www.wikidata.org/wiki/Special:EntityData/${spec.qid}.json`);
+      const ent = wd && wd.entities && wd.entities[spec.qid], cl = ent && ent.claims;
+      if (cl) {
+        found = { id, name: nd.name, ok: true, qid: spec.qid, title: "",
+          desc: (ent.descriptions && ent.descriptions.en && ent.descriptions.en.value) || "", extract: "",
+          born: yr(cl, "P569"), died: yr(cl, "P570"), occQ: ids(cl, "P106").slice(0, 4),
+          natQ: ids(cl, "P27").slice(0, 2), movQ: ids(cl, "P135").slice(0, 3), worksQ: ids(cl, "P800").slice(0, 5) };
+        const p18 = str(cl, "P18");
+        if (p18) found.portrait = "https://commons.wikimedia.org/wiki/Special:FilePath/" + encodeURIComponent(p18) + "?width=480";
+      }
+      const prev0 = cache.artists[id];
+      if (prev0 && prev0.qid) delete cache.works[prev0.qid];
+      cache.artists[id] = found || { id, name: nd.name, ok: false };
+      console.log(`${found ? "fixed  " : "blanked"} ${nd.name}  ->  ${found ? "wikidata " + spec.qid + " | " + found.desc : "(not found)"}`);
+      await sleep(120); continue;
+    }
+    for (const t of (spec || [])) {
       const s = await get(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(t)}`);
       if (!s || s.type !== "standard" || !s.wikibase_item) continue;
       const wd = await get(`https://www.wikidata.org/wiki/Special:EntityData/${s.wikibase_item}.json`);
@@ -213,6 +242,29 @@ for (const a of Object.values(cache.artists)) {
   cache.works[a.qid] = list.sort((p, q2) => score(q2) - score(p)).slice(0, 8);
 }
 writeFileSync(OUT, JSON.stringify(cache));
+
+// Upstream date sanity. Wikidata occasionally carries a date of death that is
+// really the date of birth (Alexander Melamid and Mimmo Paladino, both alive,
+// were recorded as dying in their birth year), which renders as "1945–1945".
+// A death within 12 years of birth is not a working artist, so drop it and
+// treat them as living rather than publishing a nonsense lifespan.
+{
+  let fixed = 0;
+  for (const a of Object.values(cache.artists)) {
+    if (!a.ok || !a.born || !a.died) continue;
+    if (+a.died - +a.born < 12) { a.died = ""; a.diedUnreliable = true; fixed++; }
+  }
+  if (fixed) { writeFileSync(OUT, JSON.stringify(cache)); console.log(`date sanity: dropped ${fixed} implausible death year(s)`); }
+}
+
+// Drop cache entries for artists no longer in the dataset (renamed or removed
+// at source), so the cache and the report track art.js rather than history.
+{
+  const live = new Set(nodes.map(n => n.id));
+  const gone = Object.keys(cache.artists).filter(id => !live.has(id));
+  for (const id of gone) { const q = cache.artists[id].qid; if (q) delete cache.works[q]; delete cache.artists[id]; }
+  if (gone.length) { writeFileSync(OUT, JSON.stringify(cache)); console.log("pruned (no longer in dataset):", gone.join(", ")); }
+}
 
 // ---- report ----
 const A = Object.values(cache.artists), okA = A.filter(a => a.ok);
