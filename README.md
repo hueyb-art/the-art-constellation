@@ -17,7 +17,7 @@ It shares the rendering engine of [The Music Constellation](https://github.com/h
 - **`scripts/import-art.mjs`** — parses the source markdown into `art.js` (eras, movements, mediums, the seven relationship types, and light "movement" ties so nothing floats).
 - **`scripts/validate.mjs`** — integrity gate (unique ids, no dangling edges, era coverage, build-stamp match). Run before every commit.
 
-Current: **851 artists · 802 connections · 82 movements · 7 eras.** A first pass — bios, dates, and representative artworks are the planned next enrichment (the constellation renders the *web* first; depth follows, exactly as the music project grew).
+Current: **848 artists · 799 connections · 85 movements · 7 eras.** A first pass — bios, dates, and representative artworks are the planned next enrichment (the constellation renders the *web* first; depth follows, exactly as the music project grew).
 
 ## Develop
 
