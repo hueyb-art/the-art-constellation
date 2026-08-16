@@ -22,9 +22,9 @@ To retune the feel, adjust the constants near `TL_MIN` (`scripts/…` isn't invo
 
 ## Data model
 
-- Node: `a(id,name,era,movement,medium)` → `{id,name,era,role:movement,movement,life:medium,blurb:"",bio:"",disco:[]}`. So **`role` = the movement** and **`life` = the medium** (Painter/Sculptor/…). In `loadGenre` the engine sets `nd.instr = nd.movement` — so **the "instrument" filter filters by movement** (`filterLabel:"All movements"`), and the small tag under a star is the movement.
+- Node: `a(id,name,era,movement,medium)` → `{id,name,era,role:movement,movement,life:medium,blurb:"",bio:"",disco:[]}`, then the enrichment layer (below) overwrites `life` with **"Painter · 1862–1918"** and fills `blurb`/`bio`. So **`role` = the movement** and **`life` = medium + lifespan**. In `loadGenre` the engine sets `nd.instr = nd.movement` — so **the "instrument" filter filters by movement** (`filterLabel:"All movements"`), and the small tag under a star is the movement.
 - Edge: `e(idA,idB,relationship,note)` — the `note` is the connection description, shown in the card. Seven relationships: `taught` & `championed` (directional — added to `REL_DIR` in engine.js), and `co-founded`, `partner`, `family`, `studio-mate`, `collaborated`, `movement` (symmetric — in the dataset's `sym`). `movement` edges are auto-added by the importer to tie otherwise-unconnected artists to their movement's anchor so nothing floats.
-- `blurb`/`bio` are empty in v1 (the "deepen later" phase); `validate.mjs` relaxes its node-field requirement when `g.noAudio` (only id/name/era/role required).
+- `blurb`/`bio` are now written for every artist (see the enrichment layer); `validate.mjs` still relaxes its node-field requirement when `g.noAudio` (only id/name/era/role required).
 
 ## The importer
 
