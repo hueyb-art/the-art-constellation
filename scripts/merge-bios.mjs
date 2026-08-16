@@ -6,8 +6,10 @@ import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-const DIR = process.argv[2];
-if (!DIR) { console.error("usage: node scripts/merge-bios.mjs <dir>"); process.exit(1); }
+// Accepts several directories (the original run plus any top-up runs); later
+// directories win on a clash.
+const DIRS = process.argv.slice(2).filter(a => !a.startsWith("--"));
+if (!DIRS.length) { console.error("usage: node scripts/merge-bios.mjs <dir> [dir...]"); process.exit(1); }
 
 const w = {}; new Function("window", readFileSync(ROOT + "js/data/art.js", "utf8"))(w);
 const nodes = w.GENRE_DATA.art.nodes;
@@ -15,7 +17,7 @@ const valid = new Set(nodes.map(n => n.id));
 
 const out = {};
 let files = 0, dupes = 0, unknown = [];
-for (const f of readdirSync(DIR).filter(f => /^out-\d+\.json$/.test(f)).sort()) {
+for (const DIR of DIRS) for (const f of readdirSync(DIR).filter(f => /^out-\d+\.json$/.test(f)).sort()) {
   const j = JSON.parse(readFileSync(`${DIR}/${f}`, "utf8")); files++;
   for (const [id, v] of Object.entries(j)) {
     if (!valid.has(id)) { unknown.push(id); continue; }

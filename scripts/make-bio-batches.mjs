@@ -25,7 +25,13 @@ for (const ed of G.edges) {
   (conns[ed.b] = conns[ed.b] || []).push({ rel: ed.rel, with: A.name, note: ed.note || "" });
 }
 
-const items = G.nodes.map(n => {
+// --missing: only artists that don't have a bio yet (for topping up after the
+// source markdown gains new people), instead of rewriting all 880-odd.
+const MISSING = process.argv.includes("--missing");
+const existing = (() => { try { return JSON.parse(readFileSync(ROOT + "scripts/bios.json", "utf8")); } catch { return {}; } })();
+const pool = MISSING ? G.nodes.filter(n => !existing[n.id]) : G.nodes;
+
+const items = pool.map(n => {
   const e = E.artists[n.id] || {};
   const works = (E.works[e.qid] || []).slice(0, 4).map(x => x.title + (x.year ? ` (${x.year})` : ""));
   return {

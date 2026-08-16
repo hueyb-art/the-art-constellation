@@ -342,6 +342,20 @@ function drawTimelineView(){
   for(let yr=1900;yr<=2000;yr+=10){const sx=SX(tlX(yr));if(sx<-40||sx>W+40)continue;
     ctx.strokeStyle="rgba(255,255,255,0.05)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(sx,gridTop);ctx.lineTo(sx,gridBot);ctx.stroke();
     ctx.fillStyle="rgba(245,238,226,0.82)";ctx.font="700 16px Helvetica Neue, Arial";ctx.fillText(yr,sx,axisY);}
+  /* Each movement's REAL time-span, drawn as a bar behind its cluster. Clusters
+     sit at their mid-year, so without this a decade can look empty when it was
+     not: eleven movements run straight through 1939–45 (Abstract Expressionism
+     from 1943, Indian Modernism to 1945) but plot on either side of the war. */
+  ctx.save();ctx.lineCap="round";
+  timelineMoves.forEach(mv=>{
+    if(mv.e-mv.s<1)return;
+    const x0=SX(tlX(mv.s)),x1=SX(tlX(mv.e)),y=SY(mv.ly);
+    if(x1<-60||x0>W+60)return;
+    const col=ERAS[mv.nodes[0].era].color,lit=mv===tlBloomMv;
+    ctx.strokeStyle=hexA(col,lit?0.55:0.16);ctx.lineWidth=lit?3:2;
+    ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+  });
+  ctx.restore();
   /* Tie-tracing is a CLICK affordance (selNode); hovering a cluster blooms it. */
   const foc=selNode, aid=foc&&foc.id, neigh=aid?adj[aid]:null;
   const bloom=tlBloomMv, bname=bloom&&bloom.name;
