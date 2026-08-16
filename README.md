@@ -17,7 +17,7 @@ It shares the rendering engine of [The Music Constellation](https://github.com/h
 - **`scripts/import-art.mjs`** — parses the source markdown into `art.js` (eras, movements, mediums, the seven relationship types, and light "movement" ties so nothing floats).
 - **`scripts/validate.mjs`** — integrity gate (unique ids, no dangling edges, era coverage, build-stamp match). Run before every commit.
 
-Current: **884 artists · 834 connections · 90 movements · 7 eras** — every artist with a written biography, and **861 with real lifespans, 632 with a portrait and 373 with an image of their own work**, all drawn from freely-licensed sources. Most 20th-century art is still in copyright, so artists without a free image link out to Wikipedia rather than borrowing one.
+Current: **883 artists · 833 connections · 90 movements · 7 eras** — every artist with a written biography, and **860 with real lifespans, 631 with a portrait and 373 with an image of their own work**, all drawn from freely-licensed sources. Most 20th-century art is still in copyright, so artists without a free image link out to Wikipedia rather than borrowing one.
 
 - **`scripts/enrich-art.mjs`** — harvests verified facts (dates, nationality, medium, portraits, artworks) from Wikipedia + Wikidata into `scripts/enriched.json`.
 - **`scripts/make-bio-batches.mjs`** / **`scripts/merge-bios.mjs`** — prepare the biography batches and merge the results into `scripts/bios.json`.
