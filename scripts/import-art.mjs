@@ -190,6 +190,49 @@ for (const n of nodes.values()) {
   }
 }
 
+// ---- merge the enrichment layers (optional, produced by other scripts) ----
+// scripts/enriched.json : harvested Wikidata/Wikipedia facts (enrich-art.mjs)
+// scripts/bios.json     : the written blurb + CV per artist (bio workflow)
+// Both are merged HERE so re-running this importer never wipes them.
+const readJSON = p => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
+const ENR = readJSON(new URL("./enriched.json", import.meta.url)) || { artists: {}, labels: {}, works: {} };
+const BIOS = readJSON(new URL("./bios.json", import.meta.url)) || {};
+const factsOut = {};
+for (const n of nodes.values()) {
+  const e = ENR.artists[n.id], b = BIOS[n.id];
+  if (!e && !b) continue;
+  const f = {};
+  if (e && e.ok) {
+    // Medium: the source markdown defaults everyone to "Painter" unless it
+    // carried a *Sculpture:*-style tag, which mislabels sculptors, photographers
+    // and installation artists. Wikidata's occupation is better evidence, so
+    // prefer it when it names a recognised art form.
+    const FORMS = ["painter", "sculptor", "photographer", "architect", "printmaker", "installation artist",
+      "performance artist", "video artist", "graphic designer", "ceramicist", "collagist", "illustrator",
+      "draughtsman", "muralist", "designer", "film director", "textile artist", "calligrapher", "engraver", "art dealer", "art collector", "curator", "art critic", "poet", "writer"];
+    const occs = (e.occQ || []).map(x => (ENR.labels[x] || "").toLowerCase());
+    const form = occs.find(o => FORMS.includes(o));
+    const medium = form ? form.replace(/(^|\s)\S/g, c => c.toUpperCase()) : n.medium;
+    if (medium !== n.medium) f.medium = medium;
+    // the subtitle line: the medium, plus the real lifespan from Wikidata
+    const dates = e.born && e.died ? `${e.born}–${e.died}` : (e.born ? `b. ${e.born}` : (e.died ? `d. ${e.died}` : ""));
+    f.life = dates ? `${medium} · ${dates}` : medium;
+    if (dates) f.dates = dates;
+    if (e.title) f.wiki = e.title;
+    if (e.portrait) f.img = e.portrait;
+    const nat = (e.natQ || []).map(x => ENR.labels[x]).filter(Boolean)[0];
+    if (nat) f.nat = nat;
+    const best = (ENR.works[e.qid] || [])[0];      // already ranked: signature work first
+    if (best && best.img) f.art = { u: best.img + (best.img.includes("?") ? "&" : "?") + "width=760", t: best.title || "", y: best.year || "" };
+  }
+  if (b && b.blurb) f.blurb = b.blurb;
+  if (b && b.bio) f.bio = b.bio;
+  if (Object.keys(f).length) factsOut[n.id] = f;
+}
+const factsLit = Object.keys(factsOut).length
+  ? "{\n" + Object.entries(factsOut).map(([k, v]) => `  ${JSON.stringify(k)}:${JSON.stringify(v)},`).join("\n") + "\n}"
+  : "{}";
+
 // ---- emit art.js ----
 const q = s => JSON.stringify(s == null ? "" : String(s));
 const nodeLines = [...nodes.values()].map(n =>
@@ -214,6 +257,18 @@ const nodes=[
 ${nodeLines}
 ];
 
+/* Enrichment, merged in by the importer from scripts/enriched.json (verified
+   Wikidata/Wikipedia facts) and scripts/bios.json (the written CVs):
+     life  "Painter · 1868–1918"   dates lifespan      nat  nationality
+     wiki  Wikipedia article title (portrait + link-out)
+     img   free Commons portrait   art  {u,t,y} a FREELY-LICENSED artwork
+     blurb one-line card summary   bio  the ~140-word CV
+   Only free (Commons/PD) imagery is ever referenced — most 20th-C art is still
+   in copyright, so artists without a free work carry a link-out instead. */
+const facts=${factsLit};
+const wiki={};
+nodes.forEach(n=>{const f=facts[n.id];if(f){Object.assign(n,f);if(f.wiki)wiki[n.id]=f.wiki;}});
+
 const edges=[
 ${edgeLines}
 ];
@@ -231,7 +286,7 @@ window.GENRE_DATA["art"]={
   preview:{},
   sym:["co-founded","partner","family","studio-mate","collaborated","movement"],
   eras,movements,nodes,edges,
-  lib:{},critics:[],resources:[],wiki:{},
+  lib:{},critics:[],resources:[],wiki,
 };
 })();
 `;

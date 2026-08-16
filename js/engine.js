@@ -585,11 +585,27 @@ function deselect(){selNode=null;chordAnchor=null;if(!hoverNode)focusSet=null;pa
    state (the star stays lit) rather than clearing the whole selection. */
 document.getElementById("close").onclick=()=>{if(viewMode==="chord"){panel.classList.remove("open");clipFor=null;if(clip)clip.pause();clipNote("");}else deselect();};
 function connsFor(nd){return EDGES.filter(ed=>ed.a===nd.id||ed.b===nd.id).map(ed=>({other:ed.a===nd.id?byId[ed.b]:byId[ed.a],rel:relWord(ed,nd),note:ed.note||""})).sort((a,b)=>b.other.deg-a.other.deg);}
+/* An artist's work, when it can be shown legally. Most 20th-century art is
+   still in copyright, so `nd.art` is only ever a FREELY-LICENSED file (Wikimedia
+   Commons — public domain, CC, or a public sculpture under freedom of panorama).
+   Everyone else gets a link out to Wikipedia rather than a borrowed image. */
+function artHTML(nd,cls){
+  if(nd.art&&nd.art.u){
+    const file=((nd.art.u.split("Special:FilePath/")[1]||"").split("?")[0]);
+    const cap=[nd.art.t,nd.art.y].filter(Boolean).map(esc).join(", ");
+    return `<figure class="artfig ${cls||""}">
+      <img src="${nd.art.u}" alt="${esc(nd.name)}${nd.art.t?" — "+esc(nd.art.t):""}" loading="lazy" onerror="this.closest('.artfig').style.display='none'">
+      <figcaption>${cap||"Work"} &middot; <a href="https://commons.wikimedia.org/wiki/File:${file}" target="_blank" rel="noopener">Commons</a></figcaption></figure>`;
+  }
+  if(nd.wiki)return `<a class="seework" href="https://en.wikipedia.org/wiki/${encodeURIComponent(nd.wiki)}" target="_blank" rel="noopener">See their work on Wikipedia &nearr;</a>`;
+  return "";
+}
 function renderPanel(nd){
   const era=ERAS[nd.era],cs=connsFor(nd);
   panelBody.innerHTML=`
     <span class="pill" style="background:${hexA(era.color,0.18)};color:${era.color}">${era.label}</span>
     <h2>${nd.name}</h2><div class="role">${nd.role}</div><div class="life">${nd.life}</div>
+    ${G.noAudio?artHTML(nd):""}
     <div class="bio">${nd.blurb}</div>
     <button class="openpage" id="opBtn">Open full page <span>&rarr;</span></button>
     <div class="sec">Connections (${cs.length})${G.noAudio?"":` <span class="sechint">— tap ♪ for shared records</span>`}</div>
@@ -722,6 +738,7 @@ function openPage(nd){
         <div class="plife">${nd.life}</div>
       </div>
     </div>
+    ${G.noAudio?artHTML(nd,"big"):""}
     <p class="pbio">${nd.bio}</p>
     ${G.noAudio?"":`<h3>Discography</h3>
     <div id="discoBox"><div class="discoloading">Loading the full discography from MusicBrainz…</div></div>`}
