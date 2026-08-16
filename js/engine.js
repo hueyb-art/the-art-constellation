@@ -562,8 +562,24 @@ canvas.addEventListener("mousemove",ev=>{
 canvas.addEventListener("mousedown",ev=>{unlockAudio();pointer.down=true;pointer.moved=false;pointer.x=ev.clientX;pointer.y=ev.clientY;canvas.style.cursor="grabbing";});
 addEventListener("mouseup",ev=>{if(pointer.down&&!pointer.moved){const nd=nodeAt(ev.clientX,ev.clientY);if(viewMode==="chord")chordPick(nd);else if(nd)select(nd);else deselect();}pointer.down=false;canvas.style.cursor="grab";});
 canvas.addEventListener("dblclick",ev=>{if(viewMode==="chord")return;const nd=nodeAt(ev.clientX,ev.clientY);if(nd)openPage(nd);});
+/* Zoom the timeline ABOUT THE POINTER. Screen x is W*0.04 + worldX*zoom + viewX,
+   so changing zoom alone expands everything away from the origin and the years
+   under the cursor slide off — zooming in appeared to jump the timeline back to
+   earlier decades. Hold the world point under the cursor fixed instead, which is
+   what "zoom in on this cluster" means. A horizontal wheel/trackpad swipe scrubs
+   through time, since this view is built to be panned. */
+function tlZoomAt(px,py,nz){
+  const wx=(px-W*0.04-viewX)/zoom, wy=(py-viewY)/zoom;
+  tzoom=nz;
+  [tviewX,tviewY]=clampTL(px-W*0.04-wx*nz, py-wy*nz, nz);
+}
 canvas.addEventListener("wheel",ev=>{ev.preventDefault();
-  const f=ev.deltaY<0?1.1:0.91;tzoom=Math.max(0.3,Math.min(3,tzoom*f));},{passive:false});
+  if(viewMode==="timeline"&&Math.abs(ev.deltaX)>Math.abs(ev.deltaY)){
+    [viewX,viewY]=clampTL(viewX-ev.deltaX,viewY,zoom);tviewX=viewX;tviewY=viewY;return;
+  }
+  const f=ev.deltaY<0?1.1:0.91,nz=Math.max(0.3,Math.min(3,tzoom*f));
+  if(viewMode==="timeline")tlZoomAt(ev.clientX,ev.clientY,nz);
+  else tzoom=nz;},{passive:false});
 /* touch */
 let touchMode=0,pinchD=0,tapXY=null,lastTap=0;
 canvas.addEventListener("touchstart",ev=>{
@@ -585,7 +601,10 @@ canvas.addEventListener("touchmove",ev=>{
     pointer.x=px;pointer.y=py;
   } else if(touchMode===2&&ev.touches.length>=2){
     const d=Math.hypot(ev.touches[0].clientX-ev.touches[1].clientX,ev.touches[0].clientY-ev.touches[1].clientY);
-    if(pinchD>0)tzoom=Math.max(0.3,Math.min(3,tzoom*(d/pinchD)));
+    if(pinchD>0){const nz=Math.max(0.3,Math.min(3,tzoom*(d/pinchD)));
+      /* pinch about the point between the fingers, for the same reason */
+      if(viewMode==="timeline")tlZoomAt((ev.touches[0].clientX+ev.touches[1].clientX)/2,(ev.touches[0].clientY+ev.touches[1].clientY)/2,nz);
+      else tzoom=nz;}
     pinchD=d;
   }
 },{passive:false});
