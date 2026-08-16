@@ -53,3 +53,11 @@ Coverage: 882 bios · 855 lifespans · 629 free portraits · 373 free artworks �
 
 ## Workflow
 Same as the music project: `node scripts/validate.mjs` must pass, bump `MC_BUILD` (+ matching `css?v`) on user-visible changes, commit with real messages, push. Dev server: `python3 -m http.server 8742`.
+
+## Pinning (globe view)
+
+Selecting an artist — by search or by click — **pins the globe to their star**: `centerOn` sets `pinned=true` and `trackPinned()` re-aims the camera at that node every frame from `loop()`. Two things make this necessary, and both bite hard here:
+- the force sim never fully stops (`alpha` floors at 0.05), so the layout keeps breathing;
+- centring puts a star at the near pole, where `pf=CAM/max(120,CAM-zz)` is pegged at its cap (`CAM=760`, but this graph's radii reach ~2300) — so **one pixel of world drift becomes several across the screen**. Before pinning, a searched star left the frame within seconds.
+
+The idle spin (`vyaw` easing to 0.0012) is also zeroed while something is selected. **Dragging clears the pin** (mouse + touch handlers) so a deliberate look-around isn't snapped back; `deselect()` clears it and the sky drifts again. `pinned` is declared `var` because `loop()` and the drag handlers sit above its declaration.

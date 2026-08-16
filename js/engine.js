@@ -512,9 +512,14 @@ function loop(){
     NODES.forEach(nd=>{nd.hl+=(((nd===hoverNode||nd===selNode)?1:0)-nd.hl)*0.16;});
     draw();requestAnimationFrame(loop);return;
   }
+  trackPinned();
   if(!pointer.down){
-    if(tyaw!=null){const dd=((tyaw-yaw+Math.PI*3)%(Math.PI*2))-Math.PI;yaw+=dd*0.12;pitch+=(tpitch-pitch)*0.12;vyaw=0;vpitch=0;if(Math.abs(dd)<0.01&&Math.abs(tpitch-pitch)<0.01)tyaw=null;}
-    else{yaw+=vyaw;pitch+=vpitch;vyaw+=(0.0012-vyaw)*0.03;vpitch*=0.9;}
+    if(tyaw!=null){const dd=((tyaw-yaw+Math.PI*3)%(Math.PI*2))-Math.PI;yaw+=dd*0.12;pitch+=(tpitch-pitch)*0.12;vyaw=0;vpitch=0;if(Math.abs(dd)<0.01&&Math.abs(tpitch-pitch)<0.01&&!pinned)tyaw=null;}
+    /* While an artist is selected, hold the sky still. The idle drift would
+       otherwise carry their star out of frame within seconds of a search
+       landing on it. Closing the card lets the constellation turn again. */
+    else{const idle=selNode?0:0.0012,ease=selNode?0.08:0.03;
+      yaw+=vyaw;pitch+=vpitch;vyaw+=(idle-vyaw)*ease;vpitch*=selNode?0.8:0.9;}
     pitch=Math.max(-1.3,Math.min(1.3,pitch));
   }
   zoom+=(tzoom-zoom)*0.12;viewY+=(tviewY-viewY)*0.12;viewX+=(tviewX-viewX)*0.12;
@@ -546,7 +551,7 @@ function nodeAt(px,py){
   let best=null,bz=-1e9;for(const nd of NODES){if(!visible(nd)||nd._sx==null)continue;const r=(nd._r||6)+6;if(Math.hypot(px-nd._sx,py-nd._sy)<r&&nd._d>bz){bz=nd._d;best=nd;}}return best;}
 canvas.addEventListener("mousemove",ev=>{
   const px=ev.clientX,py=ev.clientY;
-  if(pointer.down){const dx=px-pointer.x,dy=py-pointer.y;if(Math.abs(dx)+Math.abs(dy)>1){pointer.moved=true;tyaw=null;
+  if(pointer.down){const dx=px-pointer.x,dy=py-pointer.y;if(Math.abs(dx)+Math.abs(dy)>1){pointer.moved=true;tyaw=null;pinned=false;
     if(viewMode==="chord"){tviewX=viewX+=dx;tviewY=viewY+=dy;}
     else if(viewMode==="timeline"){[viewX,viewY]=clampTL(viewX+dx,viewY+dy,zoom);tviewX=viewX;tviewY=viewY;}
     else{yaw+=dx*0.005;pitch=Math.max(-1.3,Math.min(1.3,pitch+dy*0.005));vyaw=dx*0.005;vpitch=dy*0.005;}}
@@ -573,7 +578,7 @@ canvas.addEventListener("touchmove",ev=>{
     /* tap-slop: ignore small finger wobble so a tap isn't misread as a drag
        (and the selection cancelled) — only start panning past ~10px of travel. */
     if(!pointer.moved&&tapXY&&Math.abs(px-tapXY.x)+Math.abs(py-tapXY.y)>10)pointer.moved=true;
-    if(pointer.moved){const dx=px-pointer.x,dy=py-pointer.y;tyaw=null;
+    if(pointer.moved){const dx=px-pointer.x,dy=py-pointer.y;tyaw=null;pinned=false;
       if(viewMode==="chord"){tviewX=viewX+=dx;tviewY=viewY+=dy;}
       else if(viewMode==="timeline"){[viewX,viewY]=clampTL(viewX+dx,viewY+dy,zoom);tviewX=viewX;tviewY=viewY;}
       else{yaw+=dx*0.006;pitch=Math.max(-1.3,Math.min(1.3,pitch+dy*0.006));vyaw=dx*0.006;vpitch=dy*0.006;}}
@@ -594,7 +599,15 @@ canvas.addEventListener("touchend",ev=>{
 /* quick card panel */
 const panel=document.getElementById("panel"),panelBody=document.getElementById("panelBody");
 function select(nd,quiet){selNode=nd;computeFocus(nd);renderPanel(nd);panel.classList.add("open");if(MOBILE){tviewY=-H*0.24;centerOn(nd);}if(!quiet)playClip(nd);}
-function deselect(){selNode=null;chordAnchor=null;if(!hoverNode)focusSet=null;panel.classList.remove("open");tviewY=0;if(clip)clip.pause();clipNote("");}
+/* PINNING. Selecting an artist (search, or a click) pins the globe to their
+   star: the camera keeps re-aiming at it every frame. Without this the star
+   slides straight back out of frame — the layout never fully settles (alpha
+   floors at 0.05) and, once centred, a star sits near the camera plane where
+   the perspective factor is at its cap, so a pixel of drift in world space
+   throws it right across the screen. Dragging hands control back to the user;
+   deselecting releases the pin and the sky drifts again. */
+var pinned=false;   /* var, not let: loop()/the drag handlers are defined above this line */
+function deselect(){selNode=null;chordAnchor=null;pinned=false;if(!hoverNode)focusSet=null;panel.classList.remove("open");tviewY=0;if(clip)clip.pause();clipNote("");}
 /* In chord view, closing the breakout card returns to the anchored-and-silent
    state (the star stays lit) rather than clearing the whole selection. */
 document.getElementById("close").onclick=()=>{if(viewMode==="chord"){panel.classList.remove("open");clipFor=null;if(clip)clip.pause();clipNote("");}else deselect();};
@@ -735,7 +748,16 @@ function renderChordCollab(a,b){
 function centerOn(nd){
   if(viewMode==="timeline"){layoutTimeline();[tviewX,tviewY]=clampTL(W/2-W*0.04-nd._tx*tzoom,H/2-nd._ty*tzoom,tzoom);return;}
   if(viewMode==="chord")return; /* chord has its own framing; don't rotate the globe */
-  const R=Math.hypot(nd.x,nd.z);tyaw=Math.atan2(nd.x,nd.z);tpitch=Math.max(-1.3,Math.min(1.3,Math.atan2(nd.y,R)));tzoom=Math.max(tzoom,1.2);}
+  const R=Math.hypot(nd.x,nd.z);tyaw=Math.atan2(nd.x,nd.z);tpitch=Math.max(-1.3,Math.min(1.3,Math.atan2(nd.y,R)));tzoom=Math.max(tzoom,1.2);
+  pinned=true;}
+/* Re-aim at the pinned star. Called every frame from loop() so the star holds
+   its place while the layout keeps breathing underneath it. */
+function trackPinned(){
+  if(!pinned||!selNode||pointer.down||viewMode!=="globe"||!visible(selNode))return;
+  const R=Math.hypot(selNode.x,selNode.z);
+  tyaw=Math.atan2(selNode.x,selNode.z);
+  tpitch=Math.max(-1.3,Math.min(1.3,Math.atan2(selNode.y,R)));
+}
 
 /* full encyclopedia page */
 const pageEl=document.getElementById("page"),pageInner=document.getElementById("pageInner");
