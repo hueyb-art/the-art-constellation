@@ -46,6 +46,25 @@ const ids = (cl, p) => claim(cl, p).map(c => { try { return c.mainsnak.datavalue
 const yr = (cl, p) => { try { const t = cl[p][0].mainsnak.datavalue.value.time; return (t[0] === "-" ? "-" : "") + t.slice(1, 5).replace(/^0+/, ""); } catch { return ""; } };
 const str = (cl, p) => { try { return cl[p][0].mainsnak.datavalue.value; } catch { return ""; } };
 
+// Known NAME COLLISIONS. These artists share a name with a more famous
+// non-artist, so the plain title lookup lands on the wrong person entirely —
+// "Gronk" resolved to the NFL player Rob Gronkowski, "Max Weber" to the German
+// sociologist, "Abdel Hadi El-Gazzar" to a basketball player. Re-resolved with
+// disambiguated titles and an art-occupation requirement; if none matches we
+// record NO facts rather than somebody else's life. Run: --collisions
+const COLLISION = {
+  maxweber: ["Max Weber (artist)"],
+  tanakaatsuko: ["Atsuko Tanaka (artist)"],
+  abdelhadielgazzar: ["Abdel Hadi El-Gazzar (artist)", "Abdel Hadi El Gazzar"],
+  gronk: ["Gronk (artist)"],
+  oscarrabin: ["Oscar Rabine", "Oscar Rabin (artist)"],
+  kwonyoungwoo: ["Kwon Young-woo (artist)", "Kwon Young-Woo (artist)"],
+  minjoungki: ["Min Joung-ki (artist)", "Min Joung-ki"],
+  eddiechambers: ["Eddie Chambers (art historian)"],
+  tomdoyle: ["Tom Doyle (sculptor)"],
+  thebandungschool: [],          // not a person at all — a school; never enrich
+};
+
 // ---- resolve one artist -> {title, qid, extract, dates, portrait, ...} ----
 async function resolve(nd) {
   const out = { id: nd.id, name: nd.name, ok: false };
@@ -92,6 +111,40 @@ async function resolve(nd) {
 // ---- run ----
 const cache = (!REFRESH && existsSync(OUT)) ? JSON.parse(readFileSync(OUT, "utf8")) : { artists: {}, labels: {}, works: {} };
 cache.artists = cache.artists || {}; cache.labels = cache.labels || {}; cache.works = cache.works || {};
+
+// --collisions: re-resolve only the known name-collision artists, strictly
+if (args.includes("--collisions")) {
+  const ART_OCC = /(paint|sculpt|artist|photograph|architect|print|draught|ceramic|collag|installation|performance|curat|art histor|art critic|design|mural|engrav|calligraph|illustrat)/i;
+  for (const [id, titles] of Object.entries(COLLISION)) {
+    const nd = nodes.find(n => n.id === id); if (!nd) continue;
+    let found = null;
+    for (const t of titles) {
+      const s = await get(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(t)}`);
+      if (!s || s.type !== "standard" || !s.wikibase_item) continue;
+      const wd = await get(`https://www.wikidata.org/wiki/Special:EntityData/${s.wikibase_item}.json`);
+      const ent = wd && wd.entities && wd.entities[s.wikibase_item], cl = ent && ent.claims; if (!cl) continue;
+      const occ = ids(cl, "P106").map(q => q);
+      const lb = await get(`https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=labels&languages=en&ids=${occ.slice(0, 6).join("|") || "Q5"}`);
+      const occNames = Object.values((lb && lb.entities) || {}).map(e => (e.labels && e.labels.en && e.labels.en.value) || "");
+      const desc = (ent.descriptions && ent.descriptions.en && ent.descriptions.en.value) || "";
+      if (!occNames.some(o => ART_OCC.test(o)) && !ART_OCC.test(desc)) continue;   // STRICT: must be an art figure
+      found = { id, name: nd.name, ok: true, title: s.title, qid: s.wikibase_item, desc, extract: s.extract || "",
+        born: yr(cl, "P569"), died: yr(cl, "P570"), occQ: ids(cl, "P106").slice(0, 4), natQ: ids(cl, "P27").slice(0, 2),
+        movQ: ids(cl, "P135").slice(0, 3), worksQ: ids(cl, "P800").slice(0, 5) };
+      const p18 = str(cl, "P18");
+      if (p18) found.portrait = "https://commons.wikimedia.org/wiki/Special:FilePath/" + encodeURIComponent(p18) + "?width=480";
+      break;
+    }
+    const prev = cache.artists[id];
+    if (prev && prev.qid) delete cache.works[prev.qid];             // drop the wrong person's artwork
+    cache.artists[id] = found || { id, name: nd.name, ok: false };  // no facts beats wrong facts
+    console.log(`${found ? "fixed  " : "blanked"} ${nd.name}  ->  ${found ? found.title + " | " + found.desc : "(no verified art match)"}`);
+    await sleep(120);
+  }
+  writeFileSync(OUT, JSON.stringify(cache));
+  console.log("\nRe-run the SPARQL artwork step for the fixed ids with a normal run.");
+  process.exit(0);
+}
 
 // --retry: re-attempt only the artists that previously failed to match
 const RETRY = args.includes("--retry");

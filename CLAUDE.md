@@ -34,8 +34,21 @@ To retune the feel, adjust the constants near `TL_MIN` (`scripts/…` isn't invo
 
 Edit the source markdown and re-run, or hand-edit `art.js` for small fixes.
 
-## Next enrichment (planned)
-Bios + dates per artist, and a **representative artwork image** per artist (Wikipedia/Wikimedia, link-out for in-copyright work — most 20th-C art is still under copyright). The engine already loads artist portraits from Wikipedia; artworks are the media-layer upgrade.
+## The enrichment layer (facts, bios, artwork)
+
+Three files feed the artist pages. `import-art.mjs` merges the latter two in, so **re-importing from the markdown never wipes them**:
+
+- **`scripts/enriched.json`** — verified facts per artist, harvested by `scripts/enrich-art.mjs` from Wikipedia + Wikidata (committed, so builds don't refetch). Modes: plain run (resume), `--refresh`, `--retry` (only prior failures), `--collisions` (see below), `--limit N`.
+- **`scripts/bios.json`** — `{id:{blurb,bio}}`, produced by the writing agents and merged with `scripts/merge-bios.mjs`. Batches for the agents come from `scripts/make-bio-batches.mjs`.
+- Result on each node: `life` ("Painter · 1862–1918"), `dates`, `medium`, `nat`, `wiki`, `img` (portrait), `art` `{u,t,y}`, `blurb`, `bio`.
+
+**Accuracy guards — these exist because each one caught real errors:**
+- A match must be **a human on Wikidata (`P31=Q5`)**, or an explicitly art-related entity (the dataset's duos/collectives: Christo & Jeanne-Claude, Bernd & Hilla Becher, Art & Language). Disambiguation/list pages always rejected.
+- **Name collisions** are the nastiest failure: "Gronk" resolves to the NFL player, "Max Weber" to the German sociologist, "Abdel Hadi El-Gazzar" to a basketball player. The `COLLISION` map in `enrich-art.mjs` re-resolves these with disambiguated titles under a strict art-occupation test; anything that still can't be verified is **blanked — no facts beats wrong facts**. Re-run detection with the mismatch scan (artists whose occupation/description shows no art connection).
+- **Only freely-licensed imagery is ever referenced.** Portraits come from Wikidata `P18` (Commons-only); the article lead image is deliberately NOT used because it can be fair-use. Artworks come from SPARQL (`creator P170` → work with `P18`), ranked so the signature piece wins. Most 20th-C art is still in copyright, so ~57% of artists have no free artwork and get a **`.seework` link-out** instead (`artHTML()` in engine.js).
+- Bios were written by agents **from the harvested facts + curated connection notes only**, then adversarially fact-checked batch-by-batch; that pass repaired 308 unsupported claims (invented dates, cross-record place leaks, near-verbatim Wikipedia).
+
+Coverage: 848 bios · 821 lifespans · 608 free portraits · 363 free artworks · 388 mediums corrected from Wikidata (the markdown defaults everyone to "Painter").
 
 ## Workflow
 Same as the music project: `node scripts/validate.mjs` must pass, bump `MC_BUILD` (+ matching `css?v`) on user-visible changes, commit with real messages, push. Dev server: `python3 -m http.server 8742`.
