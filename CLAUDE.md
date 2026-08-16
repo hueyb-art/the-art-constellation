@@ -49,7 +49,7 @@ Three files feed the artist pages. `import-art.mjs` merges the latter two in, so
 - **Only freely-licensed imagery is ever referenced.** Portraits come from Wikidata `P18` (Commons-only); the article lead image is deliberately NOT used because it can be fair-use. Artworks come from SPARQL (`creator P170` → work with `P18`), ranked so the signature piece wins. Most 20th-C art is still in copyright, so ~57% of artists have no free artwork and get a **`.seework` link-out** instead (`artHTML()` in engine.js).
 - Bios were written by agents **from the harvested facts + curated connection notes only**, then adversarially fact-checked batch-by-batch; that pass repaired 308 unsupported claims (invented dates, cross-record place leaks, near-verbatim Wikipedia).
 
-Coverage: 848 bios · 821 lifespans · 608 free portraits · 363 free artworks · 388 mediums corrected from Wikidata (the markdown defaults everyone to "Painter").
+Coverage: 882 bios · 855 lifespans · 629 free portraits · 373 free artworks · ~390 mediums corrected from Wikidata (the markdown defaults everyone to "Painter").
 
 ## Workflow
 Same as the music project: `node scripts/validate.mjs` must pass, bump `MC_BUILD` (+ matching `css?v`) on user-visible changes, commit with real messages, push. Dev server: `python3 -m http.server 8742`.
