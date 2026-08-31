@@ -75,7 +75,7 @@ The single most productive accuracy check on this dataset. An artist who shares 
 
 Two cheap detectors, both worth re-running after any data change:
 1. **Implausible dates** — anyone dying before 1900 or with a lifespan under ~12 years in a 20th-century dataset is almost certainly the wrong person. (This is how Francis Bacon was caught.)
-2. **Non-art occupations** — a matched record whose Wikidata occupation and description show no art connection.
+2. **Non-art occupations** — a matched record whose Wikidata occupation and description show no art connection. **Run this even when the dates agree.** A date test can only ever *reject* a candidate; it can never confirm you have the right person, and near-misses happen by coincidence more often than feels possible. The music constellation lost three entries to exactly that in Sept 2026 — Don Cherry the trumpeter (1936) matched the ice hockey coach (1934) and Joe Gibbs the reggae producer (1942) matched the NFL coach (1940), both close enough to pass. Occupation is the check that catches those.
 
 Fix by adding disambiguated titles to `COLLISION` in `enrich-art.mjs`; if nothing verifies, **blank it — no facts beats wrong facts**. Note the art test accepts "writer"/"poet" (the dataset contains critics and patrons), which is exactly the hole Bacon and Corneille came through.
 
